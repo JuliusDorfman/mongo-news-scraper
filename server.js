@@ -1,57 +1,112 @@
-// establish app framework
 const express = require("express");
 const app = express();
-
-// database/dbmanagers
-const mongoose = require("mongoose");
 const logger = require("morgan");
-const bodyParser = require("body-parser");
-const PORT = process.env.port || 3000;
-mongoose.Promise = Promise
-
-// Scraping tools
-const cheerio = require("cheerio");
+const mongoose = require("mongoose");
+// scraping tools
 const request = require("request");
+const cheerio = require("cheerio");
+const PORT = process.env.port || 3000;
 
-// handlebars
-const handlebars = require("express-handlebars");
-app.engine("handlebars", handlebars({ defaultLayout: "main" }));
+// initializing express-handlebars
+const exphbs = require("express-handlebars");
+app.engine("handlrs", exphbs({ defaultLayout: "main" }));
 app.set("view engine", "handlebars");
 
+// accessing our models
+const db = require("./models");
 
-// initializing body-parser and morgan
+// Configuring our middleware (morgan/body-parser)
+const bodyParser = require("body-parser");
 app.use(logger("dev"));
-app.use(bodyParser.urlencoded({
-    extended: false
-}));
-
-// establishing our public folder as a static dir
+app.use(bodyParser.urlencoded({ extended: false }));
 app.use(express.static("public"));
 
-// Database config
-mongoose.connect("mongodb://localhost/3000");
-const db = mongoose.connection;
-
-// message issued upon failure to connect
-db.on("error", function(error, resp){
-	console.log('Mongoose Error.', resp);
+// Managing Database
+mongoose.Promise = Promise;
+mongoose.connect("mongodb://localhost/newsScraper", {
+    useMongoClient: true
 });
 
-// successful connect case
-db.once("open", function() {
-	console.log('Mongoose connection successful');
-})
+// Our Routes
+app.get("/", function(req, res) {
+    let result = [];
 
-// app will utilize newsController.js routes
-const routes = require("./controller/newsController.js");
-app.use("/", routes)
+    request("http://www.breitbart.com/california/", function(err, res, html) {
+        const $ = cheerio.load(html);
+        $("h2 a").each(function(i, element) {
 
-// begin listening for server requests
-app.listen(PORT, function(err, res) {
-    if (err) {
-        console.log('ERROR: ', err);
-    } else {
-        console.log('Connected on port: ' + PORT);
-    }
+            console.log("RESULT CREATION RUNS");
+            let title = $(element).text();
+            let link = $(element).attr("href");
+            result.push({
+                title: title,
+                link: link
+            });
+        });
+        console.log("RESULT RUNS");
+        // Create a new Article using the `result` object built from scraping
+        db.Article
+            .create(result)
+    });
+});
 
-})
+
+
+
+// Route for getting all Articles from the db
+app.get("/articles", function(req, res) {
+    // Grab every document in the Articles collection
+    db.Article
+        .find({})
+        .then(function(dbArticle) {
+            // If we were able to successfully find Articles, send them back to the client
+            res.json(dbArticle);
+        })
+        .catch(function(err) {
+            // If an error occurred, send it to the client
+            res.json(err);
+        });
+});
+
+// Route for grabbing a specific Article by id, populate it with it's note
+app.get("/articles/:id", function(req, res) {
+    // Using the id passed in the id parameter, prepare a query that finds the matching one in our db...
+    db.Article
+        .findOne({ _id: req.params.id })
+        // ..and populate all of the notes associated with it
+        .populate("note")
+        .then(function(dbArticle) {
+            // If we were able to successfully find an Article with the given id, send it back to the client
+            res.json(dbArticle);
+        })
+        .catch(function(err) {
+            // If an error occurred, send it to the client
+            res.json(err);
+        });
+});
+
+// Route for saving/updating an Article's associated Note
+app.post("/articles/:id", function(req, res) {
+    // Create a new note and pass the req.body to the entry
+    db.Note
+        .create(req.body)
+        .then(function(dbNote) {
+            // If a Note was created successfully, find one Article with an `_id` equal to `req.params.id`. Update the Article to be associated with the new Note
+            // { new: true } tells the query that we want it to return the updated User -- it returns the original by default
+            // Since our mongoose query returns a promise, we can chain another `.then` which receives the result of the query
+            return db.Article.findOneAndUpdate({ _id: req.params.id }, { note: dbNote._id }, { new: true });
+        })
+        .then(function(dbArticle) {
+            // If we were able to successfully update an Article, send it back to the client
+            res.json(dbArticle);
+        })
+        .catch(function(err) {
+            // If an error occurred, send it to the client
+            res.json(err);
+        });
+});
+
+// Start the server
+app.listen(PORT, function() {
+    console.log("App running on port " + PORT + "!");
+});
