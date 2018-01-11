@@ -5,7 +5,7 @@ const mongoose = require("mongoose");
 // scraping tools
 const request = require("request");
 const cheerio = require("cheerio");
-const PORT = process.env.port || 3000;
+const PORT = process.env.PORT || 3000;
 
 // initializing exphbspress-handlebars
 const exphbs = require("express-handlebars");
