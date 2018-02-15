@@ -33,7 +33,7 @@ app.get('/', function(req, res) {
 });
 
 // Our Routes
-app.get("/breitbart", function(req, res) {
+app.get("/", function(req, res) {
     let result = [];
 
     request("http://www.breitbart.com/california/", function(err, res, html) {
